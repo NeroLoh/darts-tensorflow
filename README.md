@@ -1,3 +1,3 @@
 # darts-tensorflow 
-Mainly refer to the pytorch version \n
+Mainly refer to the pytorch version [quark0/darts](https://github.com/quark0/darts)  
 Still working hard to implement the test code ...
