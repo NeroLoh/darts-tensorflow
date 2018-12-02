@@ -9,7 +9,7 @@ import argparse
 import tensorflow as tf
 from model_search import *
 from data_utils import read_data
-
+from datetime import datetime
 parser = argparse.ArgumentParser("cifar")
 parser.add_argument('--data', type=str, default='./data/cifar10', help='location of the data corpus')
 parser.add_argument('--batch_size', type=int, default=16, help='batch size')
@@ -18,7 +18,7 @@ parser.add_argument('--learning_rate_min', type=float, default=0.001, help='min 
 parser.add_argument('--momentum', type=float, default=0.9, help='momentum')
 parser.add_argument('--weight_decay', type=float, default=3e-4, help='weight decay')
 parser.add_argument('--report_freq', type=float, default=200, help='report frequency')
-parser.add_argument('--gpu', type=int, default=0, help='gpu device id')
+parser.add_argument('--gpu', type=int, default=1, help='gpu device id')
 parser.add_argument('--epochs', type=int, default=50, help='num of training epochs')
 parser.add_argument('--init_channels', type=int, default=16, help='num of init channels')
 parser.add_argument('--layers', type=int, default=8, help='total number of layers')
@@ -35,59 +35,109 @@ parser.add_argument('--arch_learning_rate', type=float, default=3e-4, help='lear
 parser.add_argument('--arch_weight_decay', type=float, default=1e-3, help='weight decay for arch encoding')
 args = parser.parse_args()
 
-output_dir='./outputs'
+tf.set_random_seed(args.seed)
+output_dir='./outputs/train_model/'
 if not os.path.isdir(output_dir):
 	print("Path {} does not exist. Creating.".format(output_dir))
 	os.makedirs(output_dir)
 
-
+TIMESTAMP = "{0:%Y-%m-%dT%H-%M-%S/}".format(datetime.now())
+CLASS_NUM=10
 def main():
-	class_num=10
-
 	global_step = tf.train.get_or_create_global_step()
 
 	images, labels = read_data(args.data,args.train_portion)
 	train_dataset = tf.data.Dataset.from_tensor_slices((images["train"],labels["train"]))
-	train_dataset=train_dataset.shuffle(100).batch(args.batch_size).map(_pre_process)
+	train_dataset=train_dataset.map(_pre_process).shuffle(100).batch(args.batch_size)
 	train_iter=train_dataset.make_initializable_iterator()
 	x_train,y_train=train_iter.get_next()
-	x_train = tf.map_fn(_pre_process_vein, x_train, dtype=tf.float32,back_prop=False)
 
 	valid_dataset = tf.data.Dataset.from_tensor_slices((images["valid"],labels["valid"]))
 	valid_dataset=valid_dataset.shuffle(100).batch(args.batch_size)
 	valid_iter=valid_dataset.make_initializable_iterator()
 	x_valid,y_valid=valid_iter.get_next()
 
-	model_train=Model(x_train,y_train,True,args.init_channels,class_num,args.layers)
-	logits,train_loss=model_train.outputs()
-	
-	lr=tf.train.cosine_decay(args.learning_rate,global_step,50000/args.batch_size*50)
+	logits,train_loss=Model(x_train,y_train,True,args.init_channels,CLASS_NUM,args.layers)
+
+	lr=tf.train.cosine_decay(args.learning_rate,global_step,50000/args.batch_size*args.epochs,args.learning_rate_min)
 
 	accuracy=tf.reduce_mean(tf.cast(tf.nn.in_top_k(logits, y_train, 1), tf.float32))	
-
 	w_regularization_loss = tf.add_n(utils.get_var(tf.losses.get_regularization_losses(), 'lw')[1])
 	train_loss+=1e4*args.weight_decay*w_regularization_loss
+	tf.summary.scalar('train_loss', train_loss)
+
 
 	w_var=utils.get_var(tf.trainable_variables(), 'lw')[1]
-	arch_var=utils.get_var(tf.trainable_variables(), 'arch_params')[1]
+	
+
 
 	with tf.control_dependencies([tf.group(*tf.get_collection(tf.GraphKeys.UPDATE_OPS))]):
 		follower_opt=tf.train.MomentumOptimizer(lr,args.momentum)
-		follower_opt=follower_opt.minimize(train_loss,global_step,var_list=w_var)
+		follower_grads=tf.gradients(train_loss, w_var)
+		clipped_gradients, norm =tf.clip_by_global_norm(follower_grads,args.grad_clip)
+		follower_opt=follower_opt.apply_gradients(zip(clipped_gradients,w_var),global_step)
 
+
+
+	infer_logits,infer_loss=Model(x_valid,y_valid,False,args.init_channels,CLASS_NUM,args.layers)
+	test_accuracy=tf.reduce_mean(tf.cast(tf.nn.in_top_k(infer_logits, y_valid, 1), tf.float32))
+	
+	leader_opt=compute_unrolled_step(x_valid,y_valid,w_var,train_loss,follower_opt)
+
+	
+
+	merged = tf.summary.merge_all()
+
+	objs = utils.AvgrageMeter()
+	top1 = utils.AvgrageMeter()
+	test_top1 = utils.AvgrageMeter()
+
+
+	config = tf.ConfigProto()
+	os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
+	config.gpu_options.allow_growth = True
+	sess=tf.Session(config=config)
+
+	writer = tf.summary.FileWriter(output_dir+TIMESTAMP,sess.graph)
+	saver = tf.train.Saver(max_to_keep=1)
+
+	sess.run(tf.global_variables_initializer())
+
+	genotype_record_file=open(output_dir+"genotype_record_file.txt",'w')
+	for e in range(args.epochs):
+		sess.run([train_iter.initializer,valid_iter.initializer])
+		while True:
+			try:
+				_,loss, acc,crrunt_lr,gs=sess.run([leader_opt,train_loss,accuracy,lr,global_step])
+				objs.update(loss, args.batch_size)
+				top1.update(acc, args.batch_size)
+				if gs % args.report_freq==0:
+					print("epochs {} steps {} currnt lr is {:.3f}  loss is {}  train_acc is {}".format(e,gs,crrunt_lr,objs.avg,top1.avg))
+					summary=sess.run(merged)
+					writer.add_summary(summary, gs)
+			except tf.errors.OutOfRangeError:
+				print('-'*80)
+				print("end of an epoch")
+				break
+		genotype=get_genotype(sess)
+		print("genotype is {}".format(genotype))
+		genotype_record_file.write("epoch {} \n".format(e))
+		genotype_record_file.write("{}".format(genotype)+'\n')
+		sess.run([valid_iter.initializer])
+		test_acc=sess.run([test_accuracy])
+		test_top1.update(test_acc, args.batch_size)
+		print(" ******************* epochs {} test_acc is {}".format(e,test_top1.avg))
+		saver.save(sess, output_dir+"model",gs)	
+
+
+def compute_unrolled_step(x_valid,y_valid,w_var,train_loss,follower_opt):
+	arch_var=utils.get_var(tf.trainable_variables(), 'arch_params')[1]
 	with tf.control_dependencies([follower_opt]):
 		leader_opt= tf.train.AdamOptimizer(args.arch_learning_rate, 0.5, 0.999)
+		leader_grads=leader_opt.compute_gradients(train_loss,var_list =arch_var)
 
-	leader_grads=leader_opt.compute_gradients(train_loss,var_list =arch_var)
-
-	model_valid=Model(x_valid,y_valid,True,args.init_channels,class_num,args.layers)
-	_,valid_loss=model_valid.outputs()
-
-	model_infer=Model(x_valid,y_valid,False,args.init_channels,class_num,args.layers)
-	infer_logits,infer_loss=model_infer.outputs()
-	test_accuracy=tf.reduce_mean(tf.cast(tf.nn.in_top_k(infer_logits, y_valid, 1), tf.float32))
-
-	valid_loss+=1e4*args.weight_decay*w_regularization_loss
+	_,valid_loss=Model(x_valid,y_valid,True,args.init_channels,CLASS_NUM,args.layers)
+	tf.summary.scalar('valid_loss', valid_loss)
 
 	valid_grads=tf.gradients(valid_loss,w_var)
 	r=1e-2
@@ -113,43 +163,10 @@ def main():
 	for i,(g,v) in enumerate(leader_grads):
 		leader_grads[i]=(g-args.learning_rate*implicit_grads[i],v)
 	leader_opt=leader_opt.apply_gradients(leader_grads)
-
-	objs = utils.AvgrageMeter()
-	top1 = utils.AvgrageMeter()
-	test_top1 = utils.AvgrageMeter()
-
-
-	config = tf.ConfigProto()
-	os.environ["CUDA_VISIBLE_DEVICES"] = '1'
-	config.gpu_options.allow_growth = True
-	sess=tf.Session(config=config)
-	saver = tf.train.Saver(max_to_keep=1)
-	sess.run(tf.global_variables_initializer())
-	for e in range(args.epochs):
-		sess.run([train_iter.initializer,valid_iter.initializer])
-		batch=0
-		while True:
-			try:
-				batch+=1
-				_,loss, acc,crrunt_lr,gs=sess.run([leader_opt,train_loss,accuracy,lr,global_step])
-				objs.update(loss, args.batch_size)
-				top1.update(acc, args.batch_size)
-				if batch % args.report_freq ==0:
-					print("epochs {} steps {} currnt lr is {:.3f}  loss is {}  train_acc is {}".format(e,gs,crrunt_lr,objs.avg,top1.avg))
-			except tf.errors.OutOfRangeError:
-				print('-'*80)
-				print("end of an epoch")
-				break
-		genotype=model_train.get_genotype(sess)
-		print("genotype is {}".format(genotype))
-		sess.run(valid_iter.initializer)
-		test_acc=sess.run([test_accuracy])
-		test_top1.update(acc, args.batch_size)
-		print(" ******************* epochs {} test_acc is {}".format(e,test_top1.avg))
-		saver.save(sess, output_dir,gs)	
+	return leader_opt
 
 def _pre_process(x,label):
-	cutout_length=16
+	cutout_length=args.cutout_length
 	x = tf.pad(x, [[4, 4], [4, 4], [0, 0]])
 	x = tf.random_crop(x, [32, 32, 3])
 	x = tf.image.random_flip_left_right(x)
@@ -163,6 +180,6 @@ def _pre_process(x,label):
 		mask = tf.reshape(mask, [32, 32, 1])
 		mask = tf.tile(mask, [1, 1, 3])
 		x = tf.where(tf.equal(mask, 0), x=x, y=tf.zeros_like(x))
-
+	return x,label
 if __name__ == '__main__':
   main() 

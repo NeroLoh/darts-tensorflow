@@ -60,7 +60,7 @@ def read_vein_data(data_path,num_valids=0):
     img_paths["train_valid"]=x_train_for_err
     return img_paths,labels
 
-def read_data(data_path, train_portion):
+def read_data(data_path, train_portion=0.2):
   print ("-" * 80)
   print ("Reading data")
 

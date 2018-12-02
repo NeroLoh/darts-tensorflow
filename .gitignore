@@ -1,2 +1,5 @@
-/data
-/cnn/__pycache__/
+data
+/
+cnn/__pycache__/
+
+outputs/

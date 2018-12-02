@@ -28,8 +28,8 @@ def Cell(s0,s1,genotype, C_out, reduction, reduction_prev):
 	for i in range(cells_num):
 		temp=[]
 		for j in range(2):
-			stride = [2,2] if reduction and indices[2*i] < 2 else [1,1]
-			h = states[indices[2*i+j]]
+			stride = [2,2] if reduction and indices[2*i+j] < 2 else [1,1]
+			h = state[indices[2*i+j]]
 			temp.append(OPS[op_names[2*i+j]](h, C_out, stride))   
 			#did not impelement path drop
 		state.append(tf.add_n(temp))
@@ -49,25 +49,27 @@ def AuxiliaryHeadCIFAR(x,class_num):
 
 def Model(x,y,is_training,first_C,class_num,layer_num,auxiliary,genotype,stem_multiplier=3):
 	with tf.variable_scope('lw',reuse=tf.AUTO_REUSE):
-		with slim.arg_scope([slim.batch_norm],is_training=is_training):
-			C_curr = stem_multiplier*first_C
-			s0 =slim.conv2d(x,C_curr,[3,3],activation_fn=tflearn.relu,padding='SAME',biases_initializer=None,weights_regularizer=slim.l2_regularizer(0.0001))
-			s0=slim.batch_norm(s0)
-			s1 =slim.conv2d(x,C_curr,[3,3],activation_fn=tflearn.relu,padding='SAME',biases_initializer=None,weights_regularizer=slim.l2_regularizer(0.0001))
-			s1=slim.batch_norm(s1)
-			reduction_prev = False
-			for i in range(layer_num):
-				if i in [layer_num//3, 2*layer_num//3]:
-					C_curr *= 2
-					reduction = True
-				else:
-					reduction = False
-				s0,s1 =s1,Cell(s0,s1,cells_num, multiplier, C_curr, reduction, reduction_prev)
-				reduction_prev = reduction
-				if auxiliary and i == 2*layer_num//3:
-					self.logits_aux=AuxiliaryHeadCIFAR(s1,class_num)
+		with slim.arg_scope([slim.conv2d,slim.separable_conv2d],activation_fn=None,padding='SAME',biases_initializer=None,weights_regularizer=slim.l2_regularizer(0.0001)):
+			with slim.arg_scope([slim.batch_norm],is_training=is_training):
+				C_curr = stem_multiplier*first_C
+				s0 =slim.conv2d(x,C_curr,[3,3],activation_fn=tflearn.relu)
+				s0=slim.batch_norm(s0)
+				s1 =slim.conv2d(x,C_curr,[3,3],activation_fn=tflearn.relu)
+				s1=slim.batch_norm(s1)
+				reduction_prev = False
+				for i in range(layer_num):
+					if i in [layer_num//3, 2*layer_num//3]:
+						C_curr *= 2
+						reduction = True
+					else:
+						reduction = False
+					s0,s1 =s1,Cell(s0,s1,genotype, C_curr, reduction, reduction_prev)
+					reduction_prev = reduction
+					logits_aux=None
+					if auxiliary and i == 2*layer_num//3:
+						logits_aux=AuxiliaryHeadCIFAR(s1,class_num)
 
-			out=tf.reduce_mean(s1, [1, 2], keep_dims=True, name='global_pool')
-			logits = slim.conv2d(out, class_num, [1, 1], activation_fn=None,normalizer_fn=None,weights_regularizer=slim.l2_regularizer(0.0001))
-			self.logits = tf.squeeze(logits, [1, 2], name='SpatialSqueeze')
-	return self.logits,self.logits_aux
+				out=tf.reduce_mean(s1, [1, 2], keep_dims=True, name='global_pool')
+				logits = slim.conv2d(out, class_num, [1, 1], activation_fn=None,normalizer_fn=None,weights_regularizer=slim.l2_regularizer(0.0001))
+				logits = tf.squeeze(logits, [1, 2], name='SpatialSqueeze')
+	return logits,logits_aux
