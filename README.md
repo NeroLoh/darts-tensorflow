@@ -1,8 +1,11 @@
-# Overview 
+## Paper 
 This code implement the DARTS paper in Tensorflow
 >[DARTS: Differentiable Architecture Search](https://arxiv.org/abs/1806.09055)  
 >Hanxiao Liu, Karen Simonyan, Yiming Yang.  
 >arXiv:1806.09055.  
+<p align="center">
+  <img src="images/DARTS.png" alt="darts" width="70%">
+</p>  
 
 ## Architecture Search 
 To carry out architecture search using 2nd-order approximation, run
