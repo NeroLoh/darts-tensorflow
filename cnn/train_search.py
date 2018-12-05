@@ -102,9 +102,11 @@ def main():
 	saver = tf.train.Saver(max_to_keep=1)
 
 	sess.run(tf.global_variables_initializer())
+	# saver.restore(sess, tf.train.latest_checkpoint(output_dir))
 
 	genotype_record_file=open(output_dir+"genotype_record_file.txt",'w')
 	for e in range(args.epochs):
+
 		sess.run([train_iter.initializer,valid_iter.initializer])
 		while True:
 			try:
@@ -121,10 +123,9 @@ def main():
 				break
 		genotype=get_genotype(sess)
 		print("genotype is {}".format(genotype))
-		genotype_record_file.write("epoch {} \n".format(e))
 		genotype_record_file.write("{}".format(genotype)+'\n')
 		sess.run([valid_iter.initializer])
-		test_acc=sess.run([test_accuracy])
+		test_acc=sess.run(test_accuracy)
 		test_top1.update(test_acc, args.batch_size)
 		print(" ******************* epochs {} test_acc is {}".format(e,test_top1.avg))
 		saver.save(sess, output_dir+"model",gs)	
@@ -182,4 +183,4 @@ def _pre_process(x,label):
 		x = tf.where(tf.equal(mask, 0), x=x, y=tf.zeros_like(x))
 	return x,label
 if __name__ == '__main__':
-  main() 
+	main() 

@@ -94,13 +94,14 @@ def get_genotype(sess,cells_num=4,multiplier=4):
 				with tf.variable_scope("",reuse=tf.AUTO_REUSE):
 					weight=arch_var[arch_var_name.index("arch_params/weight{}_{}:0".format(stride,offset+j))]
 					value=sess.run(weight)
-				if np.argmax(value)!=PRIMITIVES.index('none'):
-					edges.append((PRIMITIVES[np.argmax(value)],j))
-					edges_confident.append(np.max(value))
-			edges=np.array(edges)
+				if np.argmax(value)==PRIMITIVES.index('none'):
+					value=np.delete(value,np.argmax(value))
+
+				edges.append((PRIMITIVES[np.argmax(value)],j))
+				edges_confident.append(np.max(value))
 			edges_confident=np.array(edges_confident)
-			max_edges=edges[np.argsort(edges_confident)][-2:]
-			genotype.extend(max_edges.tolist())
+			max_edges=[edges[np.argsort(edges_confident)[-1]],edges[np.argsort(edges_confident)[-2]]]
+			genotype.extend(max_edges)
 			offset+=i+2
 		return genotype
 	concat = list(range(2+cells_num-multiplier, cells_num+2))
