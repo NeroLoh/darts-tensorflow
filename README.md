@@ -7,6 +7,8 @@ This code implement the DARTS paper in Tensorflow
   <img src="images/DARTS.png" alt="darts" width="70%">
 </p>  
 
+## Acknowledgement
+* This implementation is based on the original Torch implementation [quark0/darts](https://github.com/quark0/darts)  
 ## Architecture Search 
 To carry out architecture search using 2nd-order approximation, run
 ```
@@ -42,6 +44,12 @@ The train loss is decreased steadly during the searching pocess, which is more s
 </p>  
 
 ## Architecture evaluation  
-Still working hard to implement the test code ...  
-## Acknowledgement
-* This implementation is based on the original Torch implementation [quark0/darts](https://github.com/quark0/darts)  
+The test error finally decreased to around 5.8 after training 415 epoches, while the best results in pytorch version is 2.76 but trained with 600 epoches. Training more epoches can narrow the gap of performance drop. Besides that, repeating the architecture search process with different seed to choose the best structure can avoid local minimun. 
+<p align="center">
+  <img src="images/test_acc.png" alt="darts" width="70%">
+</p> 
+<p align="center">
+  Fig. The test accuracy of the searched architecture  
+</p> 
+
+
