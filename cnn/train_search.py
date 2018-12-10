@@ -88,9 +88,6 @@ def main():
 
 	merged = tf.summary.merge_all()
 
-	objs = utils.AvgrageMeter()
-	top1 = utils.AvgrageMeter()
-	test_top1 = utils.AvgrageMeter()
 
 
 	config = tf.ConfigProto()
@@ -106,7 +103,9 @@ def main():
 
 	genotype_record_file=open(output_dir+"genotype_record_file.txt",'w')
 	for e in range(args.epochs):
-
+		objs = utils.AvgrageMeter()
+		top1 = utils.AvgrageMeter()
+		test_top1 = utils.AvgrageMeter()
 		sess.run([train_iter.initializer,valid_iter.initializer])
 		while True:
 			try:

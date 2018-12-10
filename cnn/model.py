@@ -44,6 +44,7 @@ def AuxiliaryHeadCIFAR(x,class_num):
 	x=slim.conv2d(x,768,[2,2])
 	x=slim.batch_norm(x)
 	x=tflearn.relu(x)
+	x=slim.flatten(x)
 	x=slim.fully_connected(x,class_num, activation_fn=None)
 	return x
 
@@ -57,6 +58,7 @@ def Model(x,y,is_training,first_C,class_num,layer_num,auxiliary,genotype,stem_mu
 				s1 =slim.conv2d(x,C_curr,[3,3],activation_fn=tflearn.relu)
 				s1=slim.batch_norm(s1)
 				reduction_prev = False
+				logits_aux=None
 				for i in range(layer_num):
 					if i in [layer_num//3, 2*layer_num//3]:
 						C_curr *= 2
@@ -65,7 +67,6 @@ def Model(x,y,is_training,first_C,class_num,layer_num,auxiliary,genotype,stem_mu
 						reduction = False
 					s0,s1 =s1,Cell(s0,s1,genotype, C_curr, reduction, reduction_prev)
 					reduction_prev = reduction
-					logits_aux=None
 					if auxiliary and i == 2*layer_num//3:
 						logits_aux=AuxiliaryHeadCIFAR(s1,class_num)
 
