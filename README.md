@@ -7,8 +7,6 @@ This code implement the DARTS paper in Tensorflow
   <img src="images/DARTS.png" alt="darts" width="70%">
 </p>  
 
-## Acknowledgement
-* This implementation is based on the original Torch implementation [quark0/darts](https://github.com/quark0/darts)  
 ## Architecture Search 
 To carry out architecture search using 2nd-order approximation, run
 ```
@@ -52,4 +50,5 @@ The test error finally decreased to around 5.8 after training 415 epoches, while
   Fig. The test accuracy of the searched architecture  
 </p> 
 
-
+## Acknowledgement
+* This implementation is based on the original Torch implementation [quark0/darts](https://github.com/quark0/darts)  
