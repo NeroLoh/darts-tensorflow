@@ -76,10 +76,21 @@ def Model(x,y,is_training,first_C,class_num,layer_num,cells_num=4,multiplier=4,s
 				out=tf.reduce_mean(s1, [1, 2], keep_dims=True, name='global_pool')
 				logits = slim.conv2d(out, class_num, [1, 1], activation_fn=None,normalizer_fn=None,weights_regularizer=slim.l2_regularizer(0.0001))
 				logits = tf.squeeze(logits, [1, 2], name='SpatialSqueeze')
-	return logits,tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=y, logits=logits))		
-			
-		
+	train_loss=tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=y, logits=logits))
+	return logits,train_loss
+def Model_test(x,y,is_training):
+	weight_decay=3e-4			
+	with tf.variable_scope('lw',reuse=tf.AUTO_REUSE):
+		with slim.arg_scope([slim.conv2d,slim.separable_conv2d],activation_fn=None,padding='SAME',biases_initializer=None,weights_regularizer=slim.l2_regularizer(0.0001)):
+			with slim.arg_scope([slim.batch_norm],is_training=is_training):
+				x=slim.max_pool2d(x,[3,3],stride=2)
+				out=Cell(x,x,2, 4, 32, False, False)
+				out=tf.reduce_mean(out, [1, 2], keep_dims=True, name='global_pool')
+				logits = slim.conv2d(out, 10, [1, 1], activation_fn=None,normalizer_fn=None,weights_regularizer=slim.l2_regularizer(0.0001))
+				logits = tf.squeeze(logits, [1, 2], name='SpatialSqueeze')
+	train_loss=tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=y, logits=logits))
 
+	return logits,train_loss
 def get_genotype(sess,cells_num=4,multiplier=4):
 
 	def _parse(stride,sess):

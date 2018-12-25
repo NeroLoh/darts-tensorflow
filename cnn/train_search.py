@@ -66,29 +66,20 @@ def main():
 	train_loss+=1e4*args.weight_decay*w_regularization_loss
 	tf.summary.scalar('train_loss', train_loss)
 
-
 	w_var=utils.get_var(tf.trainable_variables(), 'lw')[1]
 	
-
-
 	with tf.control_dependencies([tf.group(*tf.get_collection(tf.GraphKeys.UPDATE_OPS))]):
 		follower_opt=tf.train.MomentumOptimizer(lr,args.momentum)
 		follower_grads=tf.gradients(train_loss, w_var)
 		clipped_gradients, norm =tf.clip_by_global_norm(follower_grads,args.grad_clip)
 		follower_opt=follower_opt.apply_gradients(zip(clipped_gradients,w_var),global_step)
 
-
-
 	infer_logits,infer_loss=Model(x_valid,y_valid,False,args.init_channels,CLASS_NUM,args.layers)
 	test_accuracy=tf.reduce_mean(tf.cast(tf.nn.in_top_k(infer_logits, y_valid, 1), tf.float32))
 	
 	leader_opt=compute_unrolled_step(x_valid,y_valid,w_var,train_loss,follower_opt)
 
-	
-
 	merged = tf.summary.merge_all()
-
-
 
 	config = tf.ConfigProto()
 	os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
@@ -150,16 +141,14 @@ def compute_unrolled_step(x_valid,y_valid,w_var,train_loss,follower_opt):
 
 	R = r / tf.sqrt(sum_grads)
 
-	for v,g in zip(w_var,valid_grads):
-		v.assign(v+R*g)
-	train_grads_pos=tf.gradients(train_loss,arch_var)
-	for v,g in zip(w_var,valid_grads):
-		v.assign(v-2*R*g)
-	train_grads_neg=tf.gradients(train_loss,arch_var)
-	for v,g in zip(w_var,valid_grads):
-		v.assign(v+R*g)
+	with tf.control_dependencies([v+R*g for v,g in zip(w_var,valid_grads)]):
+		train_grads_pos=tf.gradients(train_loss,arch_var)
 
-	implicit_grads=[tf.divide(gp-gn,2*R) for gp,gn in zip(train_grads_pos,train_grads_neg)]
+	with tf.control_dependencies([v-2*R*g for v,g in zip(w_var,valid_grads)]):
+		train_grads_neg=tf.gradients(train_loss,arch_var)
+
+	with tf.control_dependencies([v+R*g for v,g in zip(w_var,valid_grads)]):
+		implicit_grads=[tf.divide(gp-gn,2*R) for gp,gn in zip(train_grads_pos,train_grads_neg)]
 	for i,(g,v) in enumerate(leader_grads):
 		leader_grads[i]=(g-args.learning_rate*implicit_grads[i],v)
 	leader_opt=leader_opt.apply_gradients(leader_grads)
