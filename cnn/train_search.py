@@ -137,7 +137,7 @@ def compute_unrolled_step(x_valid,y_valid,w_var,train_loss,follower_opt):
 	opt=sum_grads.assign(0)
 	with tf.control_dependencies([opt]):
 		for v in valid_grads:
-			sum_grads=sum_grads+tf.reduce_sum(tf.square(v))
+			sum_grads=sum_grads+tf.nn.l2_loss(v)
 
 	R = r / tf.sqrt(sum_grads)
 

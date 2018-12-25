@@ -105,11 +105,12 @@ def get_genotype(sess,cells_num=4,multiplier=4):
 				with tf.variable_scope("",reuse=tf.AUTO_REUSE):
 					weight=arch_var[arch_var_name.index("arch_params/weight{}_{}:0".format(stride,offset+j))]
 					value=sess.run(weight)
-				if np.argmax(value)==PRIMITIVES.index('none'):
-					value=np.delete(value,np.argmax(value))
+				value_sorted=value.argsort()
+				max_index=value_sorted[-2] if value_sorted[-1]==PRIMITIVES.index('none') else value_sorted[-1]
+					
+				edges.append((PRIMITIVES[max_index],j))
+				edges_confident.append(value[max_index])
 
-				edges.append((PRIMITIVES[np.argmax(value)],j))
-				edges_confident.append(np.max(value))
 			edges_confident=np.array(edges_confident)
 			max_edges=[edges[np.argsort(edges_confident)[-1]],edges[np.argsort(edges_confident)[-2]]]
 			genotype.extend(max_edges)

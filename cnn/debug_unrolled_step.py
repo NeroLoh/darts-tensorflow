@@ -7,6 +7,40 @@ import tensorflow as tf
 from model_search import *
 from data_utils import read_data
 from datetime import datetime
+def get_genotype(sess,cells_num=4,multiplier=4):
+
+	def _parse(stride,sess):
+		offset=0
+		genotype=[]
+
+
+		for i in range(cells_num):
+			edges=[]
+			edges_confident=[]
+			for j in range(i+2):
+				with tf.variable_scope("",reuse=tf.AUTO_REUSE):
+
+					value=[4,1,2,3,1]
+				value_sorted=np.argsort(value)
+				max_index=value_sorted[-2] if value_sorted[-1]==PRIMITIVES.index('none') else value_sorted[-1]
+					
+				edges.append((PRIMITIVES[max_index],j))
+				edges_confident.append(value[max_index])
+
+			edges_confident=np.array(edges_confident)
+			max_edges=[edges[np.argsort(edges_confident)[-1]],edges[np.argsort(edges_confident)[-2]]]
+			genotype.extend(max_edges)
+			offset+=i+2
+		return genotype
+	concat = list(range(2+cells_num-multiplier, cells_num+2))
+	gene_normal=_parse(1,sess)
+	gene_reduce=_parse(2,sess)
+	genotype = Genotype(
+	normal=gene_normal, normal_concat=concat,
+	reduce=gene_reduce, reduce_concat=concat
+	)
+	return genotype
+
 
 CLASS_NUM=10
 def main():
@@ -38,4 +72,5 @@ def main():
 	print(sess.run(arch_grad_after)[0])
 
 if __name__ == '__main__':
-	main() 
+	# main() 
+	print(get_genotype(None))
