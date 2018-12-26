@@ -59,21 +59,19 @@ def main():
 	arch_var=utils.get_var(tf.trainable_variables(), 'arch_params')[1]
 
 	valid_grads=tf.gradients(train_loss,w_var)
-	sum_grads=tf.get_variable(name='sum_grads',shape=[],initializer=tf.constant_initializer(0.0),trainable=False)
-	opt=sum_grads.assign(0)
-	with tf.control_dependencies([opt]):
-		for v in valid_grads:
-			sum_grads=sum_grads+tf.reduce_sum(tf.square(v))
-	R=0.01
+
+	R=0.01/tf.global_norm(valid_grads)
 	
-
-	arch_grad_before=tf.gradients(train_loss,arch_var)
-	arch_grad_before1=tf.gradients(train_loss,arch_var)
-
-	w_var_b = utils.get_var(tf.trainable_variables(), 'lw')[1]
-	with tf.control_dependencies([v.assign(v+R*g) for v,g in zip(w_var,valid_grads)]):
+	#Original Implementation
+	# opts=[v.assign(v+R*g) for v,g in zip(w_var,valid_grads)]
+	# with tf.control_dependencies(opts):
+	# 	arch_grad_after=tf.gradients(train_loss,arch_var)
+	
+	optimizer1=tf.train.GradientDescentOptimizer(R)
+	optimizer1=optimizer1.apply_gradients(zip(valid_grads,w_var))
+	with tf.control_dependencies([optimizer1]):
 		arch_grad_after=tf.gradients(train_loss,arch_var)
-		w_var_a = utils.get_var(tf.trainable_variables(), 'lw')[1]
+
 
 	config = tf.ConfigProto()
 	os.environ["CUDA_VISIBLE_DEVICES"] = str(0)
@@ -83,11 +81,13 @@ def main():
 	sess.run(tf.global_variables_initializer())
 	# sess.run([train_iter.initializer])
 
-	print(sess.run(arch_grad_before)[0])
-	print(sess.run(arch_grad_before1)[0])
-	print(sess.run(w_var_b)[0])
+	start = time.time()	
 	print(sess.run(arch_grad_after)[0])
-	print(sess.run(w_var_a)[0])
+	print("time_is {}".format(time.time()-start))
+
+	start = time.time()	
+	print(sess.run(arch_grad_after)[0])
+	print("time_is {}".format(time.time()-start))
 	# start = time.time()	
 	# print(sess.run(arch_grad_2)[0])
 	# print("time_is {}".format(time.time()-start))
