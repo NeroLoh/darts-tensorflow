@@ -83,9 +83,12 @@ def Model_test(x,y,is_training):
 	with tf.variable_scope('lw',reuse=tf.AUTO_REUSE):
 		with slim.arg_scope([slim.conv2d,slim.separable_conv2d],activation_fn=None,padding='SAME',biases_initializer=None,weights_regularizer=slim.l2_regularizer(0.0001)):
 			with slim.arg_scope([slim.batch_norm],is_training=is_training):
-				x=slim.max_pool2d(x,[3,3],stride=2)
-				out=Cell(x,x,2, 4, 32, False, False)
-				out=tf.reduce_mean(out, [1, 2], keep_dims=True, name='global_pool')
+				# x=slim.max_pool2d(x,[3,3],stride=2)
+				s0=x
+				s1=x
+				for i in range(1):
+					s0,s1=s1,Cell(s0,s1,4, 4, 32, False, False)
+				out=tf.reduce_mean(s1, [1, 2], keep_dims=True, name='global_pool')
 				logits = slim.conv2d(out, 10, [1, 1], activation_fn=None,normalizer_fn=None,weights_regularizer=slim.l2_regularizer(0.0001))
 				logits = tf.squeeze(logits, [1, 2], name='SpatialSqueeze')
 	train_loss=tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=y, logits=logits))
