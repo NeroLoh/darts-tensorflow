@@ -62,13 +62,15 @@ def main():
 	lr=tf.train.cosine_decay(args.learning_rate,global_step,50000/args.batch_size*args.epochs,args.learning_rate_min)
 
 	accuracy=tf.reduce_mean(tf.cast(tf.nn.in_top_k(logits, y_train, 1), tf.float32))	
-	w_regularization_loss = tf.add_n(utils.get_var(tf.losses.get_regularization_losses(), 'lw')[1])
+	w_regularization_loss = tf.add_n(utils.get_var(tf.losses.get_regularization_losses(), 'model')[1])
 	train_loss+=1e4*args.weight_decay*w_regularization_loss
 	tf.summary.scalar('train_loss', train_loss)
 
-	w_var=utils.get_var(tf.trainable_variables(), 'lw')[1]
+	w_var=utils.get_var(tf.trainable_variables(), 'model')[1]
 	
-	with tf.control_dependencies([tf.group(*tf.get_collection(tf.GraphKeys.UPDATE_OPS))]):
+	leader_opt=compute_unrolled_step(x_train,y_train,x_valid,y_valid,w_var,train_loss,lr)
+
+	with tf.control_dependencies([leader_opt,tf.group(*tf.get_collection(tf.GraphKeys.UPDATE_OPS))]):
 		follower_opt=tf.train.MomentumOptimizer(lr,args.momentum)
 		follower_grads=tf.gradients(train_loss, w_var)
 		clipped_gradients, norm =tf.clip_by_global_norm(follower_grads,args.grad_clip)
@@ -76,8 +78,6 @@ def main():
 
 	infer_logits,infer_loss=Model(x_valid,y_valid,False,args.init_channels,CLASS_NUM,args.layers)
 	test_accuracy=tf.reduce_mean(tf.cast(tf.nn.in_top_k(infer_logits, y_valid, 1), tf.float32))
-	
-	leader_opt=compute_unrolled_step(x_valid,y_valid,w_var,train_loss,follower_opt)
 
 	merged = tf.summary.merge_all()
 
@@ -100,7 +100,7 @@ def main():
 		sess.run([train_iter.initializer,valid_iter.initializer])
 		while True:
 			try:
-				_,loss, acc,crrunt_lr,gs=sess.run([leader_opt,train_loss,accuracy,lr,global_step])
+				_,loss, acc,crrunt_lr,gs=sess.run([follower_opt,train_loss,accuracy,lr,global_step])
 				objs.update(loss, args.batch_size)
 				top1.update(acc, args.batch_size)
 				if gs % args.report_freq==0:
@@ -121,25 +121,26 @@ def main():
 		saver.save(sess, output_dir+"model",gs)	
 
 
-def compute_unrolled_step(x_valid,y_valid,w_var,train_loss,follower_opt):
-	arch_var=utils.get_var(tf.trainable_variables(), 'arch_params')[1]
+def compute_unrolled_step(x_train,y_train,x_valid,y_valid,w_var,train_loss,lr):
+	arch_var=utils.get_var(tf.trainable_variables(), 'arch_var')[1]
 
-	with tf.control_dependencies([follower_opt]):
-		leader_opt= tf.train.AdamOptimizer(args.arch_learning_rate, 0.5, 0.999)
-		leader_grads=leader_opt.compute_gradients(train_loss,var_list =arch_var)
 
-	_,valid_loss=Model(x_valid,y_valid,True,args.init_channels,CLASS_NUM,args.layers)
+	_,unrolled_train_loss=Model(x_train,y_train,True,args.init_channels,CLASS_NUM,args.layers,name="unrolled_model")  
+	unrolled_w_var=utils.get_var(tf.trainable_variables(), 'unrolled_model')[1]
+	cpoy_weight_opts=[v_.assign(v) for v_,v in zip(unrolled_w_var,w_var)]
+
+	#w'
+	with tf.control_dependencies(cpoy_weight_opts):
+		unrolled_optimizer=tf.train.GradientDescentOptimizer(lr)
+		unrolled_optimizer=unrolled_optimizer.minimize(unrolled_train_loss,var_list=unrolled_w_var)
+
+	_,valid_loss=Model(x_valid,y_valid,True,args.init_channels,CLASS_NUM,args.layers,name="unrolled_model")
 	tf.summary.scalar('valid_loss', valid_loss)
+	
+	with tf.control_dependencies([unrolled_optimizer]):
+		valid_grads=tf.gradients(valid_loss,unrolled_w_var)
 
-	valid_grads=tf.gradients(valid_loss,w_var)
 	r=1e-2
-
-	# sum_grads=tf.get_variable(name='sum_grads',shape=[],initializer=tf.constant_initializer(0.0))
-	# opt=sum_grads.assign(0)
-	# with tf.control_dependencies([opt]):
-	# 	for v in valid_grads:
-	# 		sum_grads=sum_grads+tf.reduce_sum(tf.square(v))
-
 	R = r / tf.global_norm(valid_grads)
 
 	optimizer_pos=tf.train.GradientDescentOptimizer(R)
@@ -156,8 +157,10 @@ def compute_unrolled_step(x_valid,y_valid,w_var,train_loss,follower_opt):
 		with tf.control_dependencies([optimizer_neg]):
 			train_grads_neg=tf.gradients(train_loss,arch_var)	
 			with tf.control_dependencies([optimizer_back]):
-				for i,(g,v) in enumerate(leader_grads):
-					leader_grads[i]=(g-args.learning_rate*tf.divide(train_grads_pos[i]-train_grads_neg[i],2*R),v)
+				leader_opt= tf.train.AdamOptimizer(args.arch_learning_rate, 0.5, 0.999)
+				leader_grads=leader_opt.compute_gradients(valid_loss,var_list =arch_var)
+	for i,(g,v) in enumerate(leader_grads):
+		leader_grads[i]=(g-args.learning_rate*tf.divide(train_grads_pos[i]-train_grads_neg[i],2*R),v)
 
 	leader_opt=leader_opt.apply_gradients(leader_grads)
 	return leader_opt

@@ -17,7 +17,7 @@ def MixedOp(x,C_out,stride,index,reduction):
 	ops=[]
 
 	with tf.variable_scope(null_scope):
-		with tf.variable_scope("arch_params",reuse=tf.AUTO_REUSE):
+		with tf.variable_scope("arch_var",reuse=tf.AUTO_REUSE):
 			weight=tf.get_variable("weight{}_{}".format(2 if reduction else 1,index),[len(PRIMITIVES)],initializer=tf.random_normal_initializer(0,1e-3),regularizer=slim.l2_regularizer(0.0001))
 	weight=tf.nn.softmax(weight)
 	weight=tf.reshape(weight,[-1,1,1,1])
@@ -55,8 +55,8 @@ def Cell(s0,s1,cells_num, multiplier, C_out, reduction, reduction_prev):
 	out=tf.concat(state[-multiplier:],axis=-1)
 	return out
 
-def Model(x,y,is_training,first_C,class_num,layer_num,cells_num=4,multiplier=4,stem_multiplier=3):
-	with tf.variable_scope('lw',reuse=tf.AUTO_REUSE):
+def Model(x,y,is_training,first_C,class_num,layer_num,cells_num=4,multiplier=4,stem_multiplier=3,name="model"):
+	with tf.variable_scope(name,reuse=tf.AUTO_REUSE):
 		with slim.arg_scope([slim.conv2d,slim.separable_conv2d],activation_fn=None,padding='SAME',biases_initializer=None,weights_regularizer=slim.l2_regularizer(0.0001)):
 			with slim.arg_scope([slim.batch_norm],is_training=is_training):
 				C_curr = stem_multiplier*first_C
@@ -78,15 +78,15 @@ def Model(x,y,is_training,first_C,class_num,layer_num,cells_num=4,multiplier=4,s
 				logits = tf.squeeze(logits, [1, 2], name='SpatialSqueeze')
 	train_loss=tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=y, logits=logits))
 	return logits,train_loss
-def Model_test(x,y,is_training):
+def Model_test(x,y,is_training,name="weight_var"):
 	weight_decay=3e-4			
-	with tf.variable_scope('lw',reuse=tf.AUTO_REUSE):
+	with tf.variable_scope(name,reuse=tf.AUTO_REUSE):
 		with slim.arg_scope([slim.conv2d,slim.separable_conv2d],activation_fn=None,padding='SAME',biases_initializer=None,weights_regularizer=slim.l2_regularizer(0.0001)):
 			with slim.arg_scope([slim.batch_norm],is_training=is_training):
 				# x=slim.max_pool2d(x,[3,3],stride=2)
 				s0=x
 				s1=x
-				for i in range(3):
+				for i in range(1):
 					s0,s1=s1,Cell(s0,s1,4, 4, 32, False, False)
 				out=tf.reduce_mean(s1, [1, 2], keep_dims=True, name='global_pool')
 				logits = slim.conv2d(out, 10, [1, 1], activation_fn=None,normalizer_fn=None,weights_regularizer=slim.l2_regularizer(0.0001))
@@ -99,14 +99,14 @@ def get_genotype(sess,cells_num=4,multiplier=4):
 	def _parse(stride,sess):
 		offset=0
 		genotype=[]
-		arch_var_name,arch_var=utils.get_var(tf.trainable_variables(), 'arch_params')
+		arch_var_name,arch_var=utils.get_var(tf.trainable_variables(), 'arch_var')
 
 		for i in range(cells_num):
 			edges=[]
 			edges_confident=[]
 			for j in range(i+2):
 				with tf.variable_scope("",reuse=tf.AUTO_REUSE):
-					weight=arch_var[arch_var_name.index("arch_params/weight{}_{}:0".format(stride,offset+j))]
+					weight=arch_var[arch_var_name.index("arch_var/weight{}_{}:0".format(stride,offset+j))]
 					value=sess.run(weight)
 				value_sorted=value.argsort()
 				max_index=value_sorted[-2] if value_sorted[-1]==PRIMITIVES.index('none') else value_sorted[-1]

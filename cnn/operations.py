@@ -28,7 +28,7 @@ def Zero(x,stride):
 
 def DilConv(x,C_out,kernel_size,stride,rate):
 	x=tflearn.relu(x)
-	x=slim.separable_convolution2d(x,C_out,kernel_size,depth_multiplier=1,stride=stride)
+	x=slim.separable_convolution2d(x,C_out,kernel_size,depth_multiplier=1,stride=stride,rate=rate)
 	x=slim.batch_norm(x)
 	return x
 def SepConv(x,C_out,kernel_size,stride):

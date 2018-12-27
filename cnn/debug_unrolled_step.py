@@ -47,18 +47,27 @@ CLASS_NUM=10
 def main():
 	tf.set_random_seed(1234)
 	images, labels = read_data('./data/cifar10',0.5)
-	# train_dataset = tf.data.Dataset.from_tensor_slices((images["train"],labels["train"]))
-	# train_dataset=train_dataset.shuffle(100).batch(16)
-	# train_iter=train_dataset.make_initializable_iterator()
-	# x_train,y_train=train_iter.get_next()
-	x_train=images["train"][:16]
-	y_train=labels["train"][:16]
+	train_dataset = tf.data.Dataset.from_tensor_slices((images["train"],labels["train"]))
+	train_dataset=train_dataset.shuffle(100).batch(16)
+	train_iter=train_dataset.make_initializable_iterator()
+	x_train,y_train=train_iter.get_next()
+	# x_train=images["train"][:16]
+	# y_train=labels["train"][:16]
 
 	logits,train_loss=Model_test(x_train,y_train,True)
-	w_var=utils.get_var(tf.trainable_variables(), 'lw')[1]
-	arch_var=utils.get_var(tf.trainable_variables(), 'arch_params')[1]
+	w_var=utils.get_var(tf.trainable_variables(), 'weight_var')[1]
+	arch_var=utils.get_var(tf.trainable_variables(), 'arch_var')[1]
 
-	valid_grads=tf.gradients(train_loss,w_var)
+	_,unrolled_train_loss=Model_test(x_train,y_train,True, "unrolled_weight_var")  
+	unrolled_w_var=utils.get_var(tf.trainable_variables(), 'unrolled_weight_var')[1]
+	cpoy_weight_opts=[v_.assign(v) for v_,v in zip(unrolled_w_var,w_var)]
+
+	with tf.control_dependencies(cpoy_weight_opts):
+		unrolled_optimizer=tf.train.GradientDescentOptimizer(0.001)
+		unrolled_optimizer=unrolled_optimizer.minimize(unrolled_train_loss,var_list=unrolled_w_var)
+	#w'
+	with tf.control_dependencies([unrolled_optimizer]):
+		valid_grads=tf.gradients(unrolled_train_loss,unrolled_w_var)
 
 	R=0.01/tf.global_norm(valid_grads)
 	
@@ -66,7 +75,7 @@ def main():
 	# opts=[v.assign(v+R*g) for v,g in zip(w_var,valid_grads)]
 	# with tf.control_dependencies(opts):
 	# 	arch_grad_after=tf.gradients(train_loss,arch_var)
-	
+
 	optimizer1=tf.train.GradientDescentOptimizer(R)
 	optimizer1=optimizer1.apply_gradients(zip(valid_grads,w_var))
 	with tf.control_dependencies([optimizer1]):
@@ -79,15 +88,15 @@ def main():
 	sess=tf.Session(config=config)
 
 	sess.run(tf.global_variables_initializer())
-	# sess.run([train_iter.initializer])
-
-	start = time.time()	
+	sess.run([train_iter.initializer])
+	print(sess.run(valid_grads)[0])
+	start = time.time()	     
 	print(sess.run(arch_grad_after)[0])
 	print("time_is {}".format(time.time()-start))
-
-	start = time.time()	
-	print(sess.run(arch_grad_after)[0])
-	print("time_is {}".format(time.time()-start))
+	print(sess.run(valid_grads)[0])
+	# start = time.time()	
+	# print(sess.run(arch_grad_after)[0])
+	# print("time_is {}".format(time.time()-start))
 	# start = time.time()	
 	# print(sess.run(arch_grad_2)[0])
 	# print("time_is {}".format(time.time()-start))
