@@ -77,7 +77,7 @@ def main():
 		follower_opt=follower_opt.apply_gradients(zip(clipped_gradients,w_var),global_step)
 
 	infer_logits,infer_loss=Model(x_valid,y_valid,False,args.init_channels,CLASS_NUM,args.layers)
-	test_accuracy=tf.reduce_mean(tf.cast(tf.nn.in_top_k(infer_logits, y_valid, 1), tf.float32))
+	valid_accuracy=tf.reduce_mean(tf.cast(tf.nn.in_top_k(infer_logits, y_valid, 1), tf.float32))
 
 	merged = tf.summary.merge_all()
 
@@ -114,16 +114,23 @@ def main():
 		genotype=get_genotype(sess)
 		print("genotype is {}".format(genotype))
 		genotype_record_file.write("{}".format(genotype)+'\n')
-		sess.run([valid_iter.initializer])
-		test_acc=sess.run(test_accuracy)
-		test_top1.update(test_acc, args.batch_size)
-		print(" ******************* epochs {} test_acc is {}".format(e,test_top1.avg))
-		saver.save(sess, output_dir+"model",gs)	
+
+		valid_top1 = utils.AvgrageMeter()
+		sess.run(valid_iter.initializer)
+		while True:
+			try:
+				valid_acc=sess.run(valid_accuracy)
+				test_top1.update(valid_acc, args.batch_size)
+			except tf.errors.OutOfRangeError:
+				print("******************* epochs {}   valid_acc is {}".format(e,test_top1.avg))
+				saver.save(sess, output_dir+"model",gs)
+				print('-'*80)
+				print("end of an valid epoch")
+				break
 
 
 def compute_unrolled_step(x_train,y_train,x_valid,y_valid,w_var,train_loss,lr):
 	arch_var=utils.get_var(tf.trainable_variables(), 'arch_var')[1]
-
 
 	_,unrolled_train_loss=Model(x_train,y_train,True,args.init_channels,CLASS_NUM,args.layers,name="unrolled_model")  
 	unrolled_w_var=utils.get_var(tf.trainable_variables(), 'unrolled_model')[1]
